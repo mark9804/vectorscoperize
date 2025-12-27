@@ -1,0 +1,22 @@
+{
+  "configurations": [
+    {
+      "type": "lldb",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:vectoscoperize}",
+      "name": "Debug Vectoscoperize",
+      "program": "${workspaceFolder:vectoscoperize}/.build/debug/Vectoscoperize",
+      "preLaunchTask": "swift: Build Debug Vectoscoperize"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:vectoscoperize}",
+      "name": "Release Vectoscoperize",
+      "program": "${workspaceFolder:vectoscoperize}/.build/release/Vectoscoperize",
+      "preLaunchTask": "swift: Build Release Vectoscoperize"
+    }
+  ]
+}
