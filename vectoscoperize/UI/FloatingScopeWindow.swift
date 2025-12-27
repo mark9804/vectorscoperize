@@ -32,6 +32,9 @@ class ScopeWindowController: NSWindowController {
         panel.isFloatingPanel = true
         panel.isMovableByWindowBackground = true
 
+        // Enforce 1:1 Aspect Ratio
+        panel.contentAspectRatio = NSSize(width: 1, height: 1)
+
         // Metal View
         let metalView = MTKView()
         metalView.device = renderer.device
