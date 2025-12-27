@@ -45,15 +45,24 @@ class AppState: ObservableObject {
     var renderer = ScopeRenderer()
     var scopeWindowController: ScopeWindowController?
     var selectionWindow: NSWindow?
+    var selectionEventMonitor: Any?
     
     @Published var isScopeVisible = false
     
     init() {
         // Connect Capture to Renderer
         renderer.setInput(publisher: captureEngine.frameSubject)
+        
+        // Auto-trigger selection on first launch
+        DispatchQueue.main.async {
+            self.startSelection()
+        }
     }
     
     func startSelection() {
+        // Prevent multiple selection windows
+        if selectionWindow != nil { return }
+        
         // Create full screen overlay
         let overlayView = OverlaySelectionView(isPresented: .constant(true), onSelectionComplete: { rect in
             self.startCapture(rect: rect)
@@ -67,6 +76,8 @@ class AppState: ObservableObject {
         window.isOpaque = false
         window.hasShadow = false
         window.ignoresMouseEvents = false
+        // Allow becoming key despite borderless
+        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         
         // Cover all screens or main screen
         if let screen = NSScreen.main {
@@ -75,26 +86,38 @@ class AppState: ObservableObject {
         
         window.makeKeyAndOrderFront(nil)
         selectionWindow = window
+        
+        // Monitor ESC key to cancel
+        selectionEventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            if event.keyCode == 53 { // ESC
+                self?.cancelSelection()
+                return nil
+            }
+            return event
+        }
+    }
+    
+    func cancelSelection() {
+        if let window = selectionWindow {
+            window.close()
+            selectionWindow = nil
+        }
+        if let monitor = selectionEventMonitor {
+            NSEvent.removeMonitor(monitor)
+            selectionEventMonitor = nil
+        }
     }
     
     func startCapture(rect: CGRect) {
-        selectionWindow?.close()
-        selectionWindow = nil
+        // Cleanup selection UI
+        cancelSelection()
         
         Task {
             // Check permissions first
             if await captureEngine.checkPermissions() {
                 await captureEngine.refreshContent()
                 // Find display. For now assume Main Display.
-                // We need to map the rect to the correct display if multiple are present.
-                // SCDisplay has 'frame'.
-                
                 if let display = captureEngine.availableDisplays.first {
-                     // Adjust rect relative to display if needed? 
-                     // SCStream expects rect in display coordinates usually.
-                     // On macOS, specific display coordinate handling is tricky.
-                     // We will use the main display for MVP.
-                     
                     await captureEngine.startCapture(display: display, rect: rect)
                     
                     DispatchQueue.main.async {
@@ -116,6 +139,14 @@ class AppState: ObservableObject {
     func showScopes() {
         if scopeWindowController == nil {
             scopeWindowController = ScopeWindowController(renderer: renderer)
+            
+            // Sync Window Close with State
+            NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: scopeWindowController?.window, queue: nil) { [weak self] _ in
+                DispatchQueue.main.async {
+                    self?.isScopeVisible = false
+                    self?.scopeWindowController = nil
+                }
+            }
         }
         scopeWindowController?.showWindow(nil)
         isScopeVisible = true
@@ -123,6 +154,6 @@ class AppState: ObservableObject {
     
     func hideScopes() {
         scopeWindowController?.close()
-        isScopeVisible = false
+        // cleanup handled by observer
     }
 }
