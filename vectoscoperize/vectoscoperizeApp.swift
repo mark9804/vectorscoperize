@@ -1,36 +1,36 @@
-import SwiftUI
 import ScreenCaptureKit
+import SwiftUI
 
 @main
 struct VectoscoperizeApp: App {
     @StateObject var appState = AppState()
-    
+
     var body: some Scene {
         MenuBarExtra("Vectoscoperize", systemImage: "scope") {
             Button("Select Screen Region") {
                 appState.startSelection()
             }
             .keyboardShortcut("S")
-            
+
             Button("Vector Scope") {
                 appState.renderer.displayMode = .vectorScope
             }
             .keyboardShortcut("1")
-            
+
             Button("RGB Parade") {
                 appState.renderer.displayMode = .rgbParade
             }
             .keyboardShortcut("2")
-            
+
             Divider()
-            
+
             Button(appState.isScopeVisible ? "Hide Scopes" : "Show Scopes") {
                 appState.toggleScopes()
             }
             .keyboardShortcut("V")
-            
+
             Divider()
-            
+
             Button("Quit") {
                 NSApp.terminate(nil)
             }
@@ -46,28 +46,30 @@ class AppState: ObservableObject {
     var scopeWindowController: ScopeWindowController?
     var selectionWindow: NSWindow?
     var selectionEventMonitor: Any?
-    
+
     @Published var isScopeVisible = false
-    
+
     init() {
         // Connect Capture to Renderer
         renderer.setInput(publisher: captureEngine.frameSubject)
-        
+
         // Auto-trigger selection on first launch
         DispatchQueue.main.async {
             self.startSelection()
         }
     }
-    
+
     func startSelection() {
         // Prevent multiple selection windows
         if selectionWindow != nil { return }
-        
+
         // Create full screen overlay
-        let overlayView = OverlaySelectionView(isPresented: .constant(true), onSelectionComplete: { rect in
-            self.startCapture(rect: rect)
-        })
-        
+        let overlayView = OverlaySelectionView(
+            isPresented: .constant(true),
+            onSelectionComplete: { rect in
+                self.startCapture(rect: rect)
+            })
+
         let hostingController = NSHostingController(rootView: overlayView)
         let window = NSWindow(contentViewController: hostingController)
         window.styleMask = [.borderless, .fullSizeContentView]
@@ -78,25 +80,26 @@ class AppState: ObservableObject {
         window.ignoresMouseEvents = false
         // Allow becoming key despite borderless
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        
+
         // Cover all screens or main screen
         if let screen = NSScreen.main {
             window.setFrame(screen.frame, display: true)
         }
-        
+
         window.makeKeyAndOrderFront(nil)
         selectionWindow = window
-        
+
         // Monitor ESC key to cancel
-        selectionEventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            if event.keyCode == 53 { // ESC
+        selectionEventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) {
+            [weak self] event in
+            if event.keyCode == 53 {  // ESC
                 self?.cancelSelection()
                 return nil
             }
             return event
         }
     }
-    
+
     func cancelSelection() {
         if let window = selectionWindow {
             window.close()
@@ -107,11 +110,11 @@ class AppState: ObservableObject {
             selectionEventMonitor = nil
         }
     }
-    
+
     func startCapture(rect: CGRect) {
         // Cleanup selection UI
         cancelSelection()
-        
+
         Task {
             // Check permissions first
             if await captureEngine.checkPermissions() {
@@ -119,7 +122,7 @@ class AppState: ObservableObject {
                 // Find display. For now assume Main Display.
                 if let display = captureEngine.availableDisplays.first {
                     await captureEngine.startCapture(display: display, rect: rect)
-                    
+
                     DispatchQueue.main.async {
                         self.showScopes()
                     }
@@ -127,7 +130,7 @@ class AppState: ObservableObject {
             }
         }
     }
-    
+
     func toggleScopes() {
         if isScopeVisible {
             hideScopes()
@@ -135,7 +138,7 @@ class AppState: ObservableObject {
             showScopes()
         }
     }
-    
+
     func showScopes() {
         if scopeWindowController == nil {
             let controller = ScopeWindowController(renderer: renderer)
@@ -143,9 +146,12 @@ class AppState: ObservableObject {
                 self?.startSelection()
             }
             scopeWindowController = controller
-            
+
             // Sync Window Close with State
-            NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: scopeWindowController?.window, queue: nil) { [weak self] _ in
+            NotificationCenter.default.addObserver(
+                forName: NSWindow.willCloseNotification, object: scopeWindowController?.window,
+                queue: nil
+            ) { [weak self] _ in
                 DispatchQueue.main.async {
                     self?.isScopeVisible = false
                     self?.scopeWindowController = nil
@@ -155,7 +161,7 @@ class AppState: ObservableObject {
         scopeWindowController?.showWindow(nil)
         isScopeVisible = true
     }
-    
+
     func hideScopes() {
         scopeWindowController?.close()
         // cleanup handled by observer
