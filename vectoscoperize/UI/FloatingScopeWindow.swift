@@ -10,6 +10,15 @@ class ScopeWindowController: NSWindowController {
     private var renderer: ScopeRenderer?
     private var cancellables = Set<AnyCancellable>()
     
+    var onReselect: (() -> Void)?
+    private var eventMonitor: Any?
+    
+    deinit {
+        if let monitor = eventMonitor {
+            NSEvent.removeMonitor(monitor)
+        }
+    }
+    
     convenience init(renderer: ScopeRenderer) {
         let panel = NSPanel(
             contentRect: NSRect(x: 100, y: 100, width: 512, height: 512),
@@ -77,6 +86,31 @@ class ScopeWindowController: NSWindowController {
                 }
             }
             .store(in: &cancellables)
+            
+        // Setup Keyboard Shortcuts
+        self.eventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+             guard let self = self, self.window?.isKeyWindow == true else { return event }
+             
+             if event.modifierFlags.contains(.command) {
+                 switch event.charactersIgnoringModifiers {
+                 case "s", "S":
+                     self.onReselect?()
+                     return nil
+                 case "1":
+                     self.renderer?.displayMode = .vectorScope
+                     return nil
+                 case "2":
+                     self.renderer?.displayMode = .rgbParade
+                     return nil
+                 case "v", "V":
+                     self.close()
+                     return nil
+                 default:
+                     break
+                 }
+             }
+             return event
+        }
     }
 }
 

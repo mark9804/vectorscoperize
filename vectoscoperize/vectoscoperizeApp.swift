@@ -138,7 +138,11 @@ class AppState: ObservableObject {
     
     func showScopes() {
         if scopeWindowController == nil {
-            scopeWindowController = ScopeWindowController(renderer: renderer)
+            let controller = ScopeWindowController(renderer: renderer)
+            controller.onReselect = { [weak self] in
+                self?.startSelection()
+            }
+            scopeWindowController = controller
             
             // Sync Window Close with State
             NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: scopeWindowController?.window, queue: nil) { [weak self] _ in
