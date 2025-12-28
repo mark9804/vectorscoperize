@@ -4,8 +4,31 @@ import Foundation
 import Metal
 import MetalKit
 
+// Xcode Build Compatibility
+private class BundleFinder {}
+
 @MainActor
 class ScopeRenderer: NSObject, MTKViewDelegate, ObservableObject {
+
+    // Helper to find resources in both SwiftPM and Xcode
+    static var resourceBundle: Bundle = {
+        let bundleName = "Vectoscoperize_Vectoscoperize"
+
+        let candidates = [
+            Bundle.main.resourceURL,
+            Bundle(for: BundleFinder.self).resourceURL,
+            Bundle.main.bundleURL,
+        ]
+
+        for candidate in candidates {
+            let bundlePath = candidate?.appendingPathComponent(bundleName + ".bundle")
+            if let bundle = bundlePath.flatMap(Bundle.init(url:)) {
+                return bundle
+            }
+        }
+
+        return Bundle.main
+    }()
     var device: MTLDevice?
     var commandQueue: MTLCommandQueue?
 
@@ -70,8 +93,8 @@ class ScopeRenderer: NSObject, MTKViewDelegate, ObservableObject {
 
         do {
             // Debugging Bundle
-            print("Bundle.module path: \(Bundle.module.bundlePath)")
-            if let resourceURL = Bundle.module.resourceURL {
+            print("Bundle.module path: \(ScopeRenderer.resourceBundle.bundlePath)")
+            if let resourceURL = ScopeRenderer.resourceBundle.resourceURL {
                 print("Resource URL: \(resourceURL.path)")
                 // List files
                 do {
@@ -83,11 +106,12 @@ class ScopeRenderer: NSObject, MTKViewDelegate, ObservableObject {
 
             let library: MTLLibrary
             do {
-                if let libURL = Bundle.module.url(forResource: "default", withExtension: "metallib")
+                if let libURL = ScopeRenderer.resourceBundle.url(
+                    forResource: "default", withExtension: "metallib")
                 {
                     print("Found default.metallib at \(libURL.path)")
                     library = try device.makeLibrary(URL: libURL)
-                } else if let sourceURL = Bundle.module.url(
+                } else if let sourceURL = ScopeRenderer.resourceBundle.url(
                     forResource: "ScopeShaders", withExtension: "metal")
                 {
                     print(
@@ -97,7 +121,7 @@ class ScopeRenderer: NSObject, MTKViewDelegate, ObservableObject {
                     library = try device.makeLibrary(source: source, options: nil)
                 } else {
                     print("Could not find default.metallib OR ScopeShaders.metal in Bundle.module")
-                    library = try device.makeDefaultLibrary(bundle: Bundle.module)
+                    library = try device.makeDefaultLibrary(bundle: ScopeRenderer.resourceBundle)
                 }
             } catch {
                 print("Error loading from Bundle.module: \(error)")

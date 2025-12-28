@@ -75,7 +75,7 @@ kernel void clear_vector(texture2d<float, access::write> outTexture [[texture(0)
     float4 color = float4(0.02, 0.02, 0.02, 1.0); 
     
     float2 delta = pos - center;
-    float dist = length(delta);
+    // float dist = length(delta); // Unused
     float radius = min(width, height) * 0.45; // Represents 100% excursion
     
     // 2. Crosshair (Grey)
@@ -166,7 +166,7 @@ kernel void clear_parade(texture2d<float, access::write> outTexture [[texture(0)
                          uint2 gid [[thread_position_in_grid]]) {
     if (gid.x >= outTexture.get_width() || gid.y >= outTexture.get_height()) return;
     
-    float width = float(outTexture.get_width());
+    // float width = float(outTexture.get_width()); // Unused
     float height = float(outTexture.get_height());
     float2 pos = float2(gid);
     
