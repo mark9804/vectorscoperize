@@ -12,7 +12,10 @@ Vectorscoperize is a macOS app that allows you to capture and analyze the color 
 
 ## Usage
 
-1. Start the app. The app will prompt you to select a region of the display you want to capture. After you select a region, the application window will appear.
+- Download the latest release from [releases](https://github.com/zhaoluchen/vectorscoperize/releases/latest).
+- Unzip the release file, drag to Applications folder.
+- Remove quarantine attribute from the app by running `xattr -cr /Applications/Vectorscoperize.app`.
+- Start the app. The app will prompt you to select a region of the display you want to capture. After you select a region, the application window will appear.
 
 ## Keyboard Shortcuts
 
