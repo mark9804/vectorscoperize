@@ -1,4 +1,5 @@
 import Combine
+import OSLog
 import ScreenCaptureKit
 import SwiftUI
 
@@ -42,6 +43,7 @@ struct VectorscoperizeApp: App {
 
 @MainActor
 class AppState: ObservableObject {
+    private let logger = Logger(subsystem: "com.zhaoluchen.vectorscoperize", category: "AppState")
     var captureEngine = CaptureEngine()
     var renderer = ScopeRenderer()
     var scopeWindowController: ScopeWindowController?

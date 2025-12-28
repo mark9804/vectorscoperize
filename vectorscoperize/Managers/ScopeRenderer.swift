@@ -3,6 +3,7 @@ import CoreMedia
 import Foundation
 import Metal
 import MetalKit
+import OSLog
 
 // Xcode Build Compatibility
 private class BundleFinder {}
@@ -12,7 +13,7 @@ class ScopeRenderer: NSObject, MTKViewDelegate, ObservableObject {
 
     // Helper to find resources in both SwiftPM and Xcode
     static var resourceBundle: Bundle = {
-        let bundleName = "Vectoscoperize_Vectoscoperize"
+        let bundleName = "Vectorscoperize_Vectorscoperize"
 
         let candidates = [
             Bundle.main.resourceURL,
@@ -29,6 +30,10 @@ class ScopeRenderer: NSObject, MTKViewDelegate, ObservableObject {
 
         return Bundle.main
     }()
+
+    private let logger = Logger(
+        subsystem: "com.zhaoluchen.vectorscoperize", category: "ScopeRenderer")
+
     var device: MTLDevice?
     var commandQueue: MTLCommandQueue?
 
@@ -100,8 +105,8 @@ class ScopeRenderer: NSObject, MTKViewDelegate, ObservableObject {
                 do {
                     let files = try FileManager.default.contentsOfDirectory(
                         atPath: resourceURL.path)
-                    print("Files in resource bundle: \(files)")
-                } catch { print(error) }
+                    logger.info("Files in resource bundle: \(files)")
+                } catch { logger.error("\(error.localizedDescription)") }
             }
 
             let library: MTLLibrary
@@ -109,22 +114,23 @@ class ScopeRenderer: NSObject, MTKViewDelegate, ObservableObject {
                 if let libURL = ScopeRenderer.resourceBundle.url(
                     forResource: "default", withExtension: "metallib")
                 {
-                    print("Found default.metallib at \(libURL.path)")
+                    logger.info("Found default.metallib at \(libURL.path)")
                     library = try device.makeLibrary(URL: libURL)
                 } else if let sourceURL = ScopeRenderer.resourceBundle.url(
                     forResource: "ScopeShaders", withExtension: "metal")
                 {
-                    print(
+                    logger.info(
                         "Found ScopeShaders.metal source at \(sourceURL.path), compiling at runtime..."
                     )
                     let source = try String(contentsOf: sourceURL, encoding: .utf8)
                     library = try device.makeLibrary(source: source, options: nil)
                 } else {
-                    print("Could not find default.metallib OR ScopeShaders.metal in Bundle.module")
+                    logger.error(
+                        "Could not find default.metallib OR ScopeShaders.metal in Bundle.module")
                     library = try device.makeDefaultLibrary(bundle: ScopeRenderer.resourceBundle)
                 }
             } catch {
-                print("Error loading from Bundle.module: \(error)")
+                logger.error("Error loading from Bundle: \(error.localizedDescription)")
                 // Fallback attempts...
                 if let defaultLib = device.makeDefaultLibrary() {
                     library = defaultLib
@@ -140,7 +146,7 @@ class ScopeRenderer: NSObject, MTKViewDelegate, ObservableObject {
                 let clearVecFunc = library.makeFunction(name: "clear_vector"),
                 let clearParadeFunc = library.makeFunction(name: "clear_parade")
             else {
-                print("Error: Could not find shader functions")
+                logger.error("Error: Could not find shader functions")
                 return
             }
 
@@ -150,7 +156,7 @@ class ScopeRenderer: NSObject, MTKViewDelegate, ObservableObject {
             clearParadeState = try device.makeComputePipelineState(function: clearParadeFunc)
 
         } catch {
-            print("Error building pipelines: \(error)")
+            logger.error("Error building pipelines: \(error.localizedDescription)")
         }
     }
 
