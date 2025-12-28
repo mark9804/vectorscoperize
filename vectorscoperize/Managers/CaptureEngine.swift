@@ -7,7 +7,7 @@ import OSLog
 @MainActor
 class CaptureEngine: NSObject, SCStreamOutput, SCStreamDelegate, ObservableObject {
     
-    private let logger = Logger(subsystem: "com.zhaoluchen.vectoscoperize", category: "CaptureEngine")
+    private let logger = Logger(subsystem: "com.zhaoluchen.vectorscoperize", category: "CaptureEngine")
     
     @Published var isCapturing = false
     @Published var availableDisplays: [SCDisplay] = []
@@ -69,7 +69,7 @@ class CaptureEngine: NSObject, SCStreamOutput, SCStreamDelegate, ObservableObjec
         
         do {
             stream = SCStream(filter: filter, configuration: config, delegate: self)
-            try stream?.addStreamOutput(self, type: .screen, sampleHandlerQueue: DispatchQueue(label: "com.vectoscoperize.capture"))
+            try stream?.addStreamOutput(self, type: .screen, sampleHandlerQueue: DispatchQueue(label: "com.vectorscoperize.capture"))
             try await stream?.startCapture()
             self.isCapturing = true
             logger.info("Capture started for rect: \(rect.debugDescription)")

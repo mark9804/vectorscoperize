@@ -1,6 +1,6 @@
 //
 //  ContentView.swift
-//  vectoscoperize
+//  vectorscoperize
 //
 //  Created by Zhaolu Chen on 2025/12/13.
 //

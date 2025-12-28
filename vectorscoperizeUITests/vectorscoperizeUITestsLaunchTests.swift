@@ -1,13 +1,13 @@
 //
-//  vectoscoperizeUITestsLaunchTests.swift
-//  vectoscoperizeUITests
+//  vectorscoperizeUITestsLaunchTests.swift
+//  vectorscoperizeUITests
 //
 //  Created by Zhaolu Chen on 2025/12/13.
 //
 
 import XCTest
 
-final class vectoscoperizeUITestsLaunchTests: XCTestCase {
+final class vectorscoperizeUITestsLaunchTests: XCTestCase {
 
     override class var runsForEachTargetApplicationUIConfiguration: Bool {
         true

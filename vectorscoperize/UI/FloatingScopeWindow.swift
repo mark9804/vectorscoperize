@@ -28,7 +28,7 @@ class ScopeWindowController: NSWindowController {
         )
         panel.level = .floating  // Always on top
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        panel.title = "Vectoscoperize"
+        panel.title = "Vectorscoperize"
         panel.isFloatingPanel = true
         panel.isMovableByWindowBackground = true
 

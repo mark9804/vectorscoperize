@@ -4,19 +4,19 @@
       "type": "lldb",
       "request": "launch",
       "args": [],
-      "cwd": "${workspaceFolder:vectoscoperize}",
-      "name": "Debug Vectoscoperize",
-      "program": "${workspaceFolder:vectoscoperize}/.build/debug/Vectoscoperize",
-      "preLaunchTask": "swift: Build Debug Vectoscoperize"
+      "cwd": "${workspaceFolder:vectorscoperize}",
+      "name": "Debug Vectorscoperize",
+      "program": "${workspaceFolder:vectorscoperize}/.build/debug/Vectorscoperize",
+      "preLaunchTask": "swift: Build Debug Vectorscoperize"
     },
     {
       "type": "lldb",
       "request": "launch",
       "args": [],
-      "cwd": "${workspaceFolder:vectoscoperize}",
-      "name": "Release Vectoscoperize",
-      "program": "${workspaceFolder:vectoscoperize}/.build/release/Vectoscoperize",
-      "preLaunchTask": "swift: Build Release Vectoscoperize"
+      "cwd": "${workspaceFolder:vectorscoperize}",
+      "name": "Release Vectorscoperize",
+      "program": "${workspaceFolder:vectorscoperize}/.build/release/Vectorscoperize",
+      "preLaunchTask": "swift: Build Release Vectorscoperize"
     }
   ]
 }

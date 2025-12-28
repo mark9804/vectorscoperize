@@ -2,11 +2,11 @@ import ScreenCaptureKit
 import SwiftUI
 
 @main
-struct VectoscoperizeApp: App {
+struct VectorscoperizeApp: App {
     @StateObject var appState = AppState()
 
     var body: some Scene {
-        MenuBarExtra("Vectoscoperize", systemImage: "scope") {
+        MenuBarExtra("Vectorscoperize", systemImage: "scope") {
             Button("Select Screen Region") {
                 appState.startSelection()
             }

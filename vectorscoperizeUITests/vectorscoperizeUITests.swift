@@ -1,13 +1,13 @@
 //
-//  vectoscoperizeUITests.swift
-//  vectoscoperizeUITests
+//  vectorscoperizeUITests.swift
+//  vectorscoperizeUITests
 //
 //  Created by Zhaolu Chen on 2025/12/13.
 //
 
 import XCTest
 
-final class vectoscoperizeUITests: XCTestCase {
+final class vectorscoperizeUITests: XCTestCase {
 
     override func setUpWithError() throws {
         // Put setup code here. This method is called before the invocation of each test method in the class.

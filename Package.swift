@@ -2,17 +2,17 @@
 import PackageDescription
 
 let package = Package(
-    name: "Vectoscoperize",
+    name: "Vectorscoperize",
     platforms: [
         .macOS(.v13)
     ],
     products: [
-        .executable(name: "Vectoscoperize", targets: ["Vectoscoperize"])
+        .executable(name: "Vectorscoperize", targets: ["Vectorscoperize"])
     ],
     targets: [
         .executableTarget(
-            name: "Vectoscoperize",
-            path: "vectoscoperize",
+            name: "Vectorscoperize",
+            path: "vectorscoperize",
             exclude: [
             ],
             resources: [
