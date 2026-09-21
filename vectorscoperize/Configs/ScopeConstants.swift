@@ -2,70 +2,53 @@ import Foundation
 import simd
 
 struct ScopeConstants {
-    // Polar Coordinate Helper
-    struct Polar {
-        var mag: Float
-        var angleDeg: Float
+    // BT.709 chroma on encoded RGB: x = 2 Cb, y = -2 Cr (texture Y points down).
+    // Cb = (B - Y') / 1.8556; Cr = (R - Y') / 1.5748.
+    static let kr: Float = 0.2126
+    static let kg: Float = 0.7152
+    static let kb: Float = 0.0722
+    static let chromaX = SIMD4<Float>(-kr / (1 - kb), -kg / (1 - kb), 1, 0)
+    static let chromaY = SIMD4<Float>(-1, kg / (1 - kr), kb / (1 - kr), 0)
 
-        func toCartesian() -> SIMD2<Float> {
-            let rad = angleDeg * .pi / 180.0
-            return SIMD2<Float>(mag * cos(rad), -mag * sin(rad))
-        }
+    static func position(for rgb: SIMD3<Float>) -> SIMD2<Float> {
+        let color = SIMD4<Float>(rgb, 1)
+        return SIMD2(simd_dot(chromaX, color), simd_dot(chromaY, color))
     }
 
-    // Target Coordinates (Polar Format <Magnitude, AngleDegrees>)
-    // Magnitudes based on Rec. 601 75% Color Bars (Ref: 0.474, 0.443, 0.336)
-    // Angles calculated via atan2(-y, x) to map to our shader coordinate system
-    static let polarTargets: [Polar] = [
-        Polar(mag: 0.474, angleDeg: 103.5),  // R
-        Polar(mag: 0.443, angleDeg: 60.7),  // MG
-        Polar(mag: 0.336, angleDeg: 347.1),  // B
-        Polar(mag: 0.474, angleDeg: 283.5),  // CY
-        Polar(mag: 0.443, angleDeg: 240.7),  // G
-        Polar(mag: 0.336, angleDeg: 167.1),  // YL
-    ]
-
-    static var defaultTargets: [SIMD2<Float>] {
-        return polarTargets.map { $0.toCartesian() }
-    }
-
-    // Labels corresponding to above
     static let targetLabels = ["R", "MG", "B", "CY", "G", "YL"]
+    static let targetColors: [SIMD3<Float>] = [
+        SIMD3(1, 0, 0), SIMD3(1, 0, 1), SIMD3(0, 0, 1),
+        SIMD3(0, 1, 1), SIMD3(0, 1, 0), SIMD3(1, 1, 0),
+    ]
+    static let defaultTargets = targetColors.map { position(for: $0 * 0.75) }
 
-    // Skin Tone Settings
-    static let skinAngle: Float = 123.0  // Degrees
-    static let skinSaturation: Float = 0.25
+    // Illustrative skin reference from reference/vector_scope.py, not a universal target.
+    static let skinReference = SIMD3<Float>(0.25, 0.07, 0)
+    static let skinPosition = position(for: skinReference)
+    static let boxSizeRatio: Float = 0.015
 
-    // Visual Settings
-    static let boxSizeRatio: Float = 0.015  // Relative to scope width
-
-    // Metal Buffer Struct Representation
+    // Field order and alignment must match GraticuleConfig in ScopeShaders.metal.
     struct MetalConfig {
+        var chromaX: SIMD4<Float>
+        var chromaY: SIMD4<Float>
         var targetR: SIMD2<Float>
         var targetMG: SIMD2<Float>
         var targetB: SIMD2<Float>
         var targetCY: SIMD2<Float>
         var targetG: SIMD2<Float>
         var targetYL: SIMD2<Float>
-
-        var skinAngle: Float
-        var skinSat: Float
+        var skinPosition: SIMD2<Float>
         var boxSizeRatio: Float
         var padding: Float = 0
     }
 
     static func makeMetalConfig() -> MetalConfig {
-        let t = defaultTargets
+        let targets = defaultTargets
         return MetalConfig(
-            targetR: t[0],
-            targetMG: t[1],
-            targetB: t[2],
-            targetCY: t[3],
-            targetG: t[4],
-            targetYL: t[5],
-            skinAngle: skinAngle,
-            skinSat: skinSaturation,
-            boxSizeRatio: boxSizeRatio
+            chromaX: chromaX, chromaY: chromaY,
+            targetR: targets[0], targetMG: targets[1], targetB: targets[2],
+            targetCY: targets[3], targetG: targets[4], targetYL: targets[5],
+            skinPosition: skinPosition, boxSizeRatio: boxSizeRatio
         )
     }
 }

@@ -1,15 +1,6 @@
 #include <metal_stdlib>
 using namespace metal;
 
-// NTSC constants
-constant float a_r = 0.701;
-constant float b_r = -0.587;
-constant float c_r = -0.114;
-
-constant float a_b = -0.299;
-constant float b_b = -0.587;
-constant float c_b = 0.886;
-
 // --- Helpers ---
 
 bool is_on_line(float2 pos, float2 start, float2 end, float thickness) {
@@ -40,6 +31,8 @@ bool is_in_box(float2 pos, float2 box_center, float box_size, float thickness) {
 
 // Configuration Struct matching Swift
 struct GraticuleConfig {
+    float4 chromaX;
+    float4 chromaY;
     float2 targetR;
     float2 targetMG;
     float2 targetB;
@@ -47,8 +40,7 @@ struct GraticuleConfig {
     float2 targetG;
     float2 targetYL;
     
-    float skinAngle;
-    float skinSat;
+    float2 skinPosition;
     float boxSizeRatio;
     float padding;
 };
@@ -75,8 +67,7 @@ kernel void clear_vector(texture2d<float, access::write> outTexture [[texture(0)
     float4 color = float4(0.02, 0.02, 0.02, 1.0); 
     
     float2 delta = pos - center;
-    // float dist = length(delta); // Unused
-    float radius = min(width, height) * 0.45; // Represents 100% excursion
+    float radius = min(width, height) * 0.45; // Axis extent: +/- 0.5 Cb/Cr
     
     // 2. Crosshair (Grey)
     if (abs(delta.x) < 0.5 || abs(delta.y) < 0.5) {
@@ -100,8 +91,6 @@ kernel void clear_vector(texture2d<float, access::write> outTexture [[texture(0)
     if (is_on_circle(pos, center, radius, 1.0)) {
         color += float4(0.2, 0.2, 0.2, 0.0);
     }
-    
-    // 4. Color Targets (From Config)
     
     // 4. Color Targets (From Config)
     
@@ -131,9 +120,8 @@ kernel void clear_vector(texture2d<float, access::write> outTexture [[texture(0)
         }
     }
     
-    // 5. Skin Tone Line (I-Axis)
-    float skin_angle_rad = config.skinAngle * 3.14159 / 180.0;
-    float2 skin_dir = float2(cos(skin_angle_rad), -sin(skin_angle_rad));
+    // 5. Skin reference, projected through the same BT.709 matrix as the trace.
+    float2 skin_dir = normalize(config.skinPosition);
     
     // Draw from center to edge
     if (is_on_line(pos, center, center + skin_dir * radius, 1.0)) {
@@ -141,8 +129,7 @@ kernel void clear_vector(texture2d<float, access::write> outTexture [[texture(0)
     }
     
     // Skin Tone Box
-    float sat_skin = config.skinSat;
-    float2 skin_pos = center + skin_dir * radius * sat_skin;
+    float2 skin_pos = center + config.skinPosition * radius;
     if (is_in_box(pos, skin_pos, box_half_size, 1.0)) {
          color = float4(0.8, 0.6, 0.4, 1.0); 
     }
@@ -150,14 +137,6 @@ kernel void clear_vector(texture2d<float, access::write> outTexture [[texture(0)
          color = float4(1.0, 1.0, 1.0, 1.0);
     }
     
-    // Q-Axis (90 deg from I)
-    float q_angle = skin_angle_rad - (90.0 * 3.14159 / 180.0); 
-    float2 q_dir = float2(cos(q_angle), -sin(q_angle));
-    // Draw full line through center
-    if (is_on_line(pos, center - q_dir * radius, center + q_dir * radius, 1.0)) {
-        color += float4(0.4, 0.0, 0.6, 0.4); // Purple-ish
-    }
-
     outTexture.write(color, gid);
 }
 
@@ -199,38 +178,19 @@ kernel void clear_parade(texture2d<float, access::write> outTexture [[texture(0)
 // Vector Scope Accessor
 kernel void vectorscope_accumulate(texture2d<float, access::read> inTexture [[texture(0)]],
                                    texture2d<float, access::read_write> outTexture [[texture(1)]],
+                                   constant GraticuleConfig &config [[buffer(0)]],
                                    uint2 gid [[thread_position_in_grid]]) {
     if (gid.x >= inTexture.get_width() || gid.y >= inTexture.get_height()) return;
 
     float4 color = inTexture.read(gid);
-    float r = color.r;
-    float g = color.g;
-    float b = color.b;
-
-    // Calculate Ry, By
-    float ry = a_r * r + b_r * g + c_r * b;
-    float by = a_b * r + b_b * g + c_b * b;
-    
-    // NTSC Scaling Factors
-    // B-Y (U) scale: 0.493. R-Y (V) scale: 0.877.
-    // We norm to [-0.5, 0.5] range effectively (or rather, just scale correctly).
-    // The divisor should be the inverse of the scale factor?
-    // U = 0.493 * (B-Y). 
-    // We want to PLOT U. So norm_x = U.
-    // norm_x = 0.493 * by.
-    // Wait, previous code was `by / 2.03`. 2.03 is approx 1/0.493.
-    // So `by * 0.493` is the same as `by / 2.028...`.
-    // Let's use the precise multiply.
-    
-    float norm_x = by * 0.493;
-    float norm_y = -(ry * 0.877); // Negative for Y-flip
+    float2 chroma = float2(dot(config.chromaX, color), dot(config.chromaY, color));
  
     float width = float(outTexture.get_width());
     float height = float(outTexture.get_height());
     float radius = min(width, height) * 0.45; 
     
     float2 center = float2(width * 0.5, height * 0.5);
-    float2 pos = center + float2(norm_x, norm_y) * radius;
+    float2 pos = center + chroma * radius;
     uint2 targetPos = uint2(pos);
     
     if (targetPos.x < uint(width) && targetPos.y < uint(height)) {

@@ -40,13 +40,12 @@ class ScopeRenderer: NSObject, MTKViewDelegate, ObservableObject {
     enum DisplayMode {
         case vectorScope
         case rgbParade
-        case split  // Left/Right ? For now let's just do toggle or both.
     }
 
     @Published var displayMode: DisplayMode = .vectorScope {
         didSet {
-            // Trigger redraw immediately when mode changes
-            mtkView?.setNeedsDisplay(mtkView?.bounds ?? .zero)
+            // Reuse the last captured image even when the screen is idle.
+            mtkView?.draw()
         }
     }
 
@@ -164,6 +163,8 @@ class ScopeRenderer: NSObject, MTKViewDelegate, ObservableObject {
         publisher
             .receive(on: DispatchQueue.main)  // MTKView draw needs main thread usually, or we can trigger from bg
             .sink { [weak self] buffer in
+                // Idle ScreenCaptureKit samples have no image and must not erase the cache.
+                guard buffer.isValid, CMSampleBufferGetImageBuffer(buffer) != nil else { return }
                 self?.currentSampleBuffer = buffer
                 // Efficiently redraw only when new frame arrives
                 self?.mtkView?.setNeedsDisplay(self?.mtkView?.bounds ?? .zero)
@@ -219,9 +220,6 @@ class ScopeRenderer: NSObject, MTKViewDelegate, ObservableObject {
 
         let clearEncoder = commandBuffer.makeComputeCommandEncoder()
 
-        // 3. Clear Output (with Graticules)
-        // ...
-
         switch displayMode {
         case .vectorScope:
             clearEncoder?.setComputePipelineState(clearVecState)
@@ -230,11 +228,6 @@ class ScopeRenderer: NSObject, MTKViewDelegate, ObservableObject {
             }
         case .rgbParade:
             clearEncoder?.setComputePipelineState(clearParadeState)
-        case .split:
-            clearEncoder?.setComputePipelineState(clearVecState)  // fallback
-            if let configBuf = configBuffer {
-                clearEncoder?.setBuffer(configBuf, offset: 0, index: 0)
-            }
         }
 
         clearEncoder?.setTexture(outTex, index: 0)
@@ -255,13 +248,10 @@ class ScopeRenderer: NSObject, MTKViewDelegate, ObservableObject {
         switch displayMode {
         case .vectorScope:
             scopeEncoder?.setComputePipelineState(vectorState)
+            scopeEncoder?.setBuffer(configBuffer, offset: 0, index: 0)
             scopeEncoder?.dispatchThreadgroups(inGroups, threadsPerThreadgroup: threadGroupSize)
         case .rgbParade:
             scopeEncoder?.setComputePipelineState(paradeState)
-            scopeEncoder?.dispatchThreadgroups(inGroups, threadsPerThreadgroup: threadGroupSize)
-        case .split:
-            // TODO: Implement split screen shader adjustment
-            scopeEncoder?.setComputePipelineState(vectorState)
             scopeEncoder?.dispatchThreadgroups(inGroups, threadsPerThreadgroup: threadGroupSize)
         }
 

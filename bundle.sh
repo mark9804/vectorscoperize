@@ -9,7 +9,7 @@ MACOS_DIR="${CONTENTS_DIR}/MacOS"
 RESOURCES_DIR="${CONTENTS_DIR}/Resources"
 
 echo "🚀 Building ${APP_NAME}..."
-swift build -c release
+swift build -c release "$@"
 
 if [ $? -ne 0 ]; then
     echo "❌ Build failed"

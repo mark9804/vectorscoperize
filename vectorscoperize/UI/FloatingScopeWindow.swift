@@ -1,7 +1,11 @@
 import Cocoa
 import Combine
 import MetalKit
-import SwiftUI
+
+private final class ScopeMetalView: MTKView {
+    override var acceptsFirstResponder: Bool { true }
+    override var needsPanelToBecomeKey: Bool { true }
+}
 
 class ScopeWindowController: NSWindowController {
 
@@ -31,18 +35,19 @@ class ScopeWindowController: NSWindowController {
         panel.title = "Vectorscoperize"
         panel.isFloatingPanel = true
         panel.isMovableByWindowBackground = true
+        panel.isReleasedWhenClosed = false
 
         // Enforce 1:1 Aspect Ratio
         panel.contentAspectRatio = NSSize(width: 1, height: 1)
 
         // Metal View
-        let metalView = MTKView()
+        let metalView = ScopeMetalView()
         metalView.device = renderer.device
         metalView.delegate = renderer
         metalView.framebufferOnly = false
         metalView.clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
         metalView.enableSetNeedsDisplay = true
-        metalView.isPaused = false
+        metalView.isPaused = true
 
         // Overlay View
         let overlay = GraticuleOverlayView()
@@ -68,11 +73,7 @@ class ScopeWindowController: NSWindowController {
         ])
 
         // Initial Mode
-        switch renderer.displayMode {
-        case .vectorScope: overlay.displayMode = .vectorScope
-        case .rgbParade: overlay.displayMode = .rgbParade
-        case .split: overlay.displayMode = .split
-        }
+        overlay.displayMode = renderer.displayMode
 
         panel.contentView = container
 
@@ -86,11 +87,7 @@ class ScopeWindowController: NSWindowController {
         renderer.$displayMode
             .receive(on: DispatchQueue.main)
             .sink { [weak self] mode in
-                switch mode {
-                case .vectorScope: self?.overlayView?.displayMode = .vectorScope
-                case .rgbParade: self?.overlayView?.displayMode = .rgbParade
-                case .split: self?.overlayView?.displayMode = .split
-                }
+                self?.overlayView?.displayMode = mode
             }
             .store(in: &cancellables)
 
@@ -113,6 +110,9 @@ class ScopeWindowController: NSWindowController {
                 case "v", "V":
                     self.close()
                     return nil
+                case "q", "Q":
+                    NSApp.terminate(nil)
+                    return nil
                 default:
                     break
                 }
@@ -120,20 +120,4 @@ class ScopeWindowController: NSWindowController {
             return event
         }
     }
-}
-
-// SwiftUI Wrapper (Optional, if we want to use WindowGroup, but we are using NSWindowController for specific NSPanel behaviors)
-struct ScopeWindowAccessor: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView()
-        DispatchQueue.main.async {
-            // Find window and configure
-            if let window = view.window {
-                window.level = .floating
-                window.styleMask.insert(.hudWindow)
-            }
-        }
-        return view
-    }
-    func updateNSView(_ nsView: NSView, context: Context) {}
 }

@@ -1,172 +1,74 @@
-import Combine
-import OSLog
-import ScreenCaptureKit
-import SwiftUI
+import AppKit
 
 @main
-struct VectorscoperizeApp: App {
-    @StateObject var appState = AppState()
-
-    var body: some Scene {
-        MenuBarExtra("Vectorscoperize", systemImage: "scope") {
-            Button("Select Screen Region") {
-                appState.startSelection()
-            }
-            .keyboardShortcut("S")
-
-            Button("Vector Scope") {
-                appState.renderer.displayMode = .vectorScope
-            }
-            .keyboardShortcut("1")
-
-            Button("RGB Parade") {
-                appState.renderer.displayMode = .rgbParade
-            }
-            .keyboardShortcut("2")
-
-            Divider()
-
-            Button(appState.isScopeVisible ? "Hide Scopes" : "Show Scopes") {
-                appState.toggleScopes()
-            }
-            .keyboardShortcut("V")
-
-            Divider()
-
-            Button("Quit") {
-                NSApp.terminate(nil)
-            }
-            .keyboardShortcut("Q")
+enum VectorscoperizeApp {
+    @MainActor
+    static func main() {
+        let application = NSApplication.shared
+        let delegate = AppDelegate()
+        application.delegate = delegate
+        application.setActivationPolicy(.accessory)
+        withExtendedLifetime(delegate) {
+            application.run()
         }
     }
 }
 
 @MainActor
-class AppState: ObservableObject {
-    private let logger = Logger(subsystem: "com.zhaoluchen.vectorscoperize", category: "AppState")
-    var captureEngine = CaptureEngine()
-    var renderer = ScopeRenderer()
-    var scopeWindowController: ScopeWindowController?
-    var selectionWindow: NSWindow?
-    var selectionEventMonitor: Any?
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
+    let appState = AppState()
+    private var statusItem: NSStatusItem?
 
-    @Published var isScopeVisible = false
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        let image = NSImage(systemSymbolName: "scope", accessibilityDescription: "Vectorscoperize")
+        image?.isTemplate = true
+        item.button?.image = image
+        item.button?.toolTip = "Vectorscoperize"
 
-    init() {
-        // Connect Capture to Renderer
-        renderer.setInput(publisher: captureEngine.frameSubject)
-
-        // Auto-trigger selection on first launch
-        DispatchQueue.main.async {
-            self.startSelection()
+        let menu = NSMenu()
+        menu.addItem(withTitle: "Select Screen Region", action: #selector(selectRegion), keyEquivalent: "s")
+        menu.addItem(withTitle: "Vector Scope", action: #selector(showVectorScope), keyEquivalent: "1")
+        menu.addItem(withTitle: "RGB Parade", action: #selector(showRGBParade), keyEquivalent: "2")
+        menu.addItem(.separator())
+        menu.addItem(withTitle: "Show Scopes", action: #selector(toggleScopes), keyEquivalent: "v")
+        menu.addItem(.separator())
+        for menuItem in menu.items where !menuItem.isSeparatorItem {
+            menuItem.target = self
         }
+        menu.addItem(withTitle: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+            .target = NSApp
+        item.menu = menu
+        statusItem = item
+
+        appState.reopen()
     }
 
-    func startSelection() {
-        // Prevent multiple selection windows
-        if selectionWindow != nil { return }
-
-        // Create full screen overlay
-        let overlayView = OverlaySelectionView(
-            isPresented: .constant(true),
-            onSelectionComplete: { rect in
-                self.startCapture(rect: rect)
-            })
-
-        let hostingController = NSHostingController(rootView: overlayView)
-        let window = NSWindow(contentViewController: hostingController)
-        window.styleMask = [.borderless, .fullSizeContentView]
-        window.level = .screenSaver
-        window.backgroundColor = .clear
-        window.isOpaque = false
-        window.hasShadow = false
-        window.ignoresMouseEvents = false
-        // Allow becoming key despite borderless
-        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-
-        // Cover all screens or main screen
-        if let screen = NSScreen.main {
-            window.setFrame(screen.frame, display: true)
-        }
-
-        window.makeKeyAndOrderFront(nil)
-        selectionWindow = window
-
-        // Monitor ESC key to cancel
-        selectionEventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) {
-            [weak self] event in
-            if event.keyCode == 53 {  // ESC
-                self?.cancelSelection()
-                return nil
-            }
-            return event
-        }
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        appState.reopen()
+        return false
     }
 
-    func cancelSelection() {
-        if let window = selectionWindow {
-            window.close()
-            selectionWindow = nil
-        }
-        if let monitor = selectionEventMonitor {
-            NSEvent.removeMonitor(monitor)
-            selectionEventMonitor = nil
-        }
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        false
     }
 
-    func startCapture(rect: CGRect) {
-        // Cleanup selection UI
-        cancelSelection()
-
-        Task {
-            // Check permissions first
-            if await captureEngine.checkPermissions() {
-                await captureEngine.refreshContent()
-                // Find display. For now assume Main Display.
-                if let display = captureEngine.availableDisplays.first {
-                    await captureEngine.startCapture(display: display, rect: rect)
-
-                    DispatchQueue.main.async {
-                        self.showScopes()
-                    }
-                }
-            }
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        switch menuItem.action {
+        case #selector(toggleScopes):
+            menuItem.title = appState.isScopeVisible ? "Hide Scopes" : "Show Scopes"
+        case #selector(showVectorScope):
+            menuItem.state = appState.renderer.displayMode == .vectorScope ? .on : .off
+        case #selector(showRGBParade):
+            menuItem.state = appState.renderer.displayMode == .rgbParade ? .on : .off
+        default:
+            break
         }
+        return true
     }
 
-    func toggleScopes() {
-        if isScopeVisible {
-            hideScopes()
-        } else {
-            showScopes()
-        }
-    }
-
-    func showScopes() {
-        if scopeWindowController == nil {
-            let controller = ScopeWindowController(renderer: renderer)
-            controller.onReselect = { [weak self] in
-                self?.startSelection()
-            }
-            scopeWindowController = controller
-
-            // Sync Window Close with State
-            NotificationCenter.default.addObserver(
-                forName: NSWindow.willCloseNotification, object: scopeWindowController?.window,
-                queue: nil
-            ) { [weak self] _ in
-                DispatchQueue.main.async {
-                    self?.isScopeVisible = false
-                    self?.scopeWindowController = nil
-                }
-            }
-        }
-        scopeWindowController?.showWindow(nil)
-        isScopeVisible = true
-    }
-
-    func hideScopes() {
-        scopeWindowController?.close()
-        // cleanup handled by observer
-    }
+    @objc private func selectRegion() { appState.startSelection() }
+    @objc private func showVectorScope() { appState.renderer.displayMode = .vectorScope }
+    @objc private func showRGBParade() { appState.renderer.displayMode = .rgbParade }
+    @objc private func toggleScopes() { appState.toggleScopes() }
 }
