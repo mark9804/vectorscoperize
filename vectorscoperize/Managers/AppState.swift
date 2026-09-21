@@ -67,13 +67,37 @@ final class AppState {
     private func startCapture(rect: CGRect) {
         cancelSelection()
         Task {
-            guard await captureEngine.checkPermissions() else { return }
+            guard await captureEngine.checkPermissions() else {
+                showScreenRecordingPermissionAlert()
+                return
+            }
             await captureEngine.refreshContent()
             guard let display = captureEngine.availableDisplays.first else { return }
             await captureEngine.startCapture(display: display, rect: rect)
             if captureEngine.isCapturing {
                 showScopes()
             }
+        }
+    }
+
+    func showScreenRecordingPermissionAlert() {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Screen Recording Permission Required"
+        alert.informativeText = "Allow Vectorscoperize in System Settings → Privacy & Security → Screen & System Audio Recording, then choose Select Screen Region from the menu bar to try again. If macOS asks, quit and reopen Vectorscoperize."
+        alert.addButton(withTitle: "Open System Settings")
+        alert.addButton(withTitle: "Select Screen Region")
+        alert.addButton(withTitle: "Cancel")
+
+        NSApp.activate(ignoringOtherApps: true)
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            NSWorkspace.shared.open(URL(string:
+                "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_ScreenCapture")!)
+        case .alertSecondButtonReturn:
+            startSelection()
+        default:
+            break
         }
     }
 

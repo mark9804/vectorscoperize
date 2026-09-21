@@ -93,6 +93,23 @@ enum ScopeRegressionCheck {
         assert(state.isScopeVisible)
         state.captureEngine.isCapturing = false
 
+        // A denied permission must offer a way back to selection without changing system permissions.
+        for response in [NSApplication.ModalResponse.alertSecondButtonReturn, .alertThirdButtonReturn] {
+            var alertWasPresented = false
+            RunLoop.main.perform(inModes: [.modalPanel]) {
+                assert(NSApp.modalWindow != nil, "Permission alert was not presented")
+                alertWasPresented = true
+                NSApp.stopModal(withCode: response)
+            }
+            state.showScreenRecordingPermissionAlert()
+            assert(alertWasPresented)
+            let selection = NSApp.windows.first { $0.isVisible && $0.level == .screenSaver }
+            assert((selection != nil) == (response == .alertSecondButtonReturn),
+                   "Permission alert did not honor reselect or cancel")
+            state.cancelSelection()
+            assert(selection?.isVisible != true, "Selection could not be cancelled")
+        }
+
         // Static captures emit metadata-only frames. They must not replace the last image.
         var pixelBuffer: CVPixelBuffer?
         let pixelStatus = CVPixelBufferCreate(
@@ -151,6 +168,6 @@ enum ScopeRegressionCheck {
         assert(dividerValue() > 100, "Static frame did not redraw as RGB parade")
         renderer.displayMode = .vectorScope
         assert(dividerValue() < 10, "Static frame did not redraw as vectorscope")
-        print("PASS: color bars, window reopening, idle-frame retention, and static-frame mode switching")
+        print("PASS: color bars, window reopening, permission recovery, idle-frame retention, and static-frame mode switching")
     }
 }
