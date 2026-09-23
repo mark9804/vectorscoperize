@@ -16,6 +16,11 @@ class ScopeWindowController: NSWindowController {
     var onReselect: (() -> Void)?
     private var eventMonitor: Any?
 
+    override func showWindow(_ sender: Any?) {
+        super.showWindow(sender)
+        renderer?.mtkView?.draw()
+    }
+
     deinit {
         if let monitor = eventMonitor {
             NSEvent.removeMonitor(monitor)

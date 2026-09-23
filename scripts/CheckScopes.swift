@@ -111,48 +111,52 @@ enum ScopeRegressionCheck {
         }
 
         // Static captures emit metadata-only frames. They must not replace the last image.
-        var pixelBuffer: CVPixelBuffer?
-        let pixelStatus = CVPixelBufferCreate(
-            kCFAllocatorDefault, 1, 1, kCVPixelFormatType_32BGRA,
-            [kCVPixelBufferMetalCompatibilityKey: true,
-             kCVPixelBufferIOSurfacePropertiesKey: [:]] as CFDictionary, &pixelBuffer)
-        assert(pixelStatus == kCVReturnSuccess)
-        let pixel = pixelBuffer!
-        CVPixelBufferLockBaseAddress(pixel, [])
-        let rgba = CVPixelBufferGetBaseAddress(pixel)!.assumingMemoryBound(to: UInt8.self)
-        rgba[0] = 32; rgba[1] = 64; rgba[2] = 192; rgba[3] = 255
-        CVPixelBufferUnlockBaseAddress(pixel, [])
-        var format: CMVideoFormatDescription?
-        let formatStatus = CMVideoFormatDescriptionCreateForImageBuffer(
-            allocator: kCFAllocatorDefault, imageBuffer: pixel, formatDescriptionOut: &format)
-        assert(formatStatus == noErr)
-        var timing = CMSampleTimingInfo(duration: .invalid, presentationTimeStamp: .zero,
-                                        decodeTimeStamp: .invalid)
-        var frame: CMSampleBuffer?
-        let frameStatus = CMSampleBufferCreateReadyWithImageBuffer(
-            allocator: kCFAllocatorDefault, imageBuffer: pixel, formatDescription: format!,
-            sampleTiming: &timing, sampleBufferOut: &frame)
-        assert(frameStatus == noErr)
+        func makeFrame(red: UInt8, green: UInt8, blue: UInt8) -> CMSampleBuffer {
+            var pixelBuffer: CVPixelBuffer?
+            let pixelStatus = CVPixelBufferCreate(
+                kCFAllocatorDefault, 1, 1, kCVPixelFormatType_32BGRA,
+                [kCVPixelBufferMetalCompatibilityKey: true,
+                 kCVPixelBufferIOSurfacePropertiesKey: [:]] as CFDictionary, &pixelBuffer)
+            assert(pixelStatus == kCVReturnSuccess)
+            let pixel = pixelBuffer!
+            CVPixelBufferLockBaseAddress(pixel, [])
+            let bytes = CVPixelBufferGetBaseAddress(pixel)!.assumingMemoryBound(to: UInt8.self)
+            bytes[0] = blue; bytes[1] = green; bytes[2] = red; bytes[3] = 255
+            CVPixelBufferUnlockBaseAddress(pixel, [])
+            var format: CMVideoFormatDescription?
+            let formatStatus = CMVideoFormatDescriptionCreateForImageBuffer(
+                allocator: kCFAllocatorDefault, imageBuffer: pixel, formatDescriptionOut: &format)
+            assert(formatStatus == noErr)
+            var timing = CMSampleTimingInfo(duration: .invalid, presentationTimeStamp: .zero,
+                                            decodeTimeStamp: .invalid)
+            var result: CMSampleBuffer?
+            let frameStatus = CMSampleBufferCreateReadyWithImageBuffer(
+                allocator: kCFAllocatorDefault, imageBuffer: pixel, formatDescription: format!,
+                sampleTiming: &timing, sampleBufferOut: &result)
+            assert(frameStatus == noErr)
+            return result!
+        }
+        let frame = makeFrame(red: 192, green: 64, blue: 32)
         var idle: CMSampleBuffer?
         let idleStatus = CMSampleBufferCreateReady(
-            allocator: kCFAllocatorDefault, dataBuffer: nil, formatDescription: format,
+            allocator: kCFAllocatorDefault, dataBuffer: nil, formatDescription: frame.formatDescription,
             sampleCount: 0, sampleTimingEntryCount: 0, sampleTimingArray: nil,
             sampleSizeEntryCount: 0, sampleSizeArray: nil, sampleBufferOut: &idle)
         assert(idleStatus == noErr && CMSampleBufferGetImageBuffer(idle!) == nil)
-        state.captureEngine.frameSubject.send(frame!)
+        state.captureEngine.frameSubject.send(frame)
         RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.05))
         state.captureEngine.frameSubject.send(idle!)
         RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.05))
         assert(renderer.currentSampleBuffer === frame, "Idle frame replaced the cached image")
 
         // Read the real output at a parade divider; switching must work without a new frame.
-        func dividerValue() -> UInt8 {
+        func outputValue(y: Int? = nil, channel: Int = 0) -> UInt8 {
             let texture = renderer.outputTexture!
             let readback = device.makeBuffer(length: 256, options: .storageModeShared)!
             let command = queue.makeCommandBuffer()!
             let blit = command.makeBlitCommandEncoder()!
             blit.copy(from: texture, sourceSlice: 0, sourceLevel: 0,
-                      sourceOrigin: MTLOrigin(x: 0, y: texture.height / 3, z: 0),
+                      sourceOrigin: MTLOrigin(x: 0, y: y ?? texture.height / 3, z: 0),
                       sourceSize: MTLSize(width: 1, height: 1, depth: 1),
                       to: readback, destinationOffset: 0, destinationBytesPerRow: 256,
                       destinationBytesPerImage: 256)
@@ -160,14 +164,32 @@ enum ScopeRegressionCheck {
             command.commit()
             command.waitUntilCompleted()
             assert(command.status == .completed)
-            return readback.contents().load(as: UInt8.self)
+            return readback.contents().load(fromByteOffset: channel, as: UInt8.self)
         }
         renderer.displayMode = .vectorScope
-        assert(dividerValue() < 10)
+        assert(outputValue() < 10)
         renderer.displayMode = .rgbParade
-        assert(dividerValue() > 100, "Static frame did not redraw as RGB parade")
+        assert(outputValue() > 100, "Static frame did not redraw as RGB parade")
         renderer.displayMode = .vectorScope
-        assert(dividerValue() < 10, "Static frame did not redraw as vectorscope")
-        print("PASS: color bars, window reopening, permission recovery, idle-frame retention, and static-frame mode switching")
+        assert(outputValue() < 10, "Static frame did not redraw as vectorscope")
+
+        // A new region can deliver its only complete frame before the scopes reopen.
+        renderer.displayMode = .rgbParade
+        state.hideScopes()
+        let newRegion = makeFrame(red: 32, green: 64, blue: 192)
+        state.captureEngine.frameSubject.send(newRegion)
+        RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.05))
+        assert(renderer.currentSampleBuffer === newRegion, "New region did not reach the renderer")
+        state.showScopes()
+        RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.05))
+        let redY = Int((1 - Float(32) / 255) * Float(renderer.outputTexture!.height / 3 - 1))
+        assert(outputValue(y: redY, channel: 2) > 100, "Reopened scopes still show the old region")
+
+        let updatedRegion = makeFrame(red: 128, green: 64, blue: 192)
+        state.captureEngine.frameSubject.send(updatedRegion)
+        RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.05))
+        let updatedY = Int((1 - Float(128) / 255) * Float(renderer.outputTexture!.height / 3 - 1))
+        assert(outputValue(y: updatedY, channel: 2) > 100, "Reopened scopes stopped updating")
+        print("PASS: color bars, window reopening, permission recovery, idle frames, mode switching, and region refresh")
     }
 }

@@ -166,8 +166,9 @@ class ScopeRenderer: NSObject, MTKViewDelegate, ObservableObject {
                 // Idle ScreenCaptureKit samples have no image and must not erase the cache.
                 guard buffer.isValid, CMSampleBufferGetImageBuffer(buffer) != nil else { return }
                 self?.currentSampleBuffer = buffer
-                // Efficiently redraw only when new frame arrives
-                self?.mtkView?.setNeedsDisplay(self?.mtkView?.bounds ?? .zero)
+                if self?.mtkView?.window?.isVisible == true {
+                    self?.mtkView?.draw()
+                }
             }
             .store(in: &cancellables)
     }

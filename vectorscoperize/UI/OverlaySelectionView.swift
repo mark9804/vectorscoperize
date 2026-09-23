@@ -25,9 +25,6 @@ struct OverlaySelectionView: View {
                             }
                             .onEnded { value in
                                 if let rect = normalizedRect() {
-                                    // Convert to global screen coordinates
-                                    // This requires knowledge of the window's position, but this view is full screen.
-                                    // We'll assume the window matches the screen 1:1.
                                     onSelectionComplete(rect)
                                 }
                                 isPresented = false
@@ -67,31 +64,7 @@ struct OverlaySelectionView: View {
     
     private func normalizedRect() -> CGRect? {
         if selectionRect.width < 10 || selectionRect.height < 10 { return nil }
-        // Ensure we map coordinates correctly to ScreenCaptureKit expected coordinates.
-        // CGWindow/Screen coordinates usually have origin at top-left for SCKit (or bottom-left for CoreGraphics).
-        // SwiftUI is top-left. ScreenCaptureKit is also top-left usually (pixel space).
-        // We will pass the rect as is, assuming the OverlayWindow is covering the relevant screen.
-        // Multi-monitor support would require more complex mapping.
-        
-        // For macOS "Tahoe" (haha) / Sequoia, we assume main monitor for now or cover all screens.
-        // Convert to screen coordinates.
-        if let window = NSApp.windows.first(where: { $0.contentView?.frame.contains(startPoint ?? .zero) ?? false }) {
-             let screenRect = window.convertToScreen(selectionRect)
-             // CoreGraphics origin is Bottom-Left, but SCContentFilter might expect Top-Left depending on usage?
-             // Actually SCContentFilter uses CGRect. It matches CGWindowList.
-             // We'll rely on global coordinates.
-             
-             // Simplification: Return the rect in the window's coordinate system, which matches main screen if full screen.
-             // We will handle the flip in the caller if needed.
-             // Let's assume Main Screen for MVP.
-             if let _ = NSScreen.main {
-                  // Cocoa (Bottom-Left) -> standard Top-Left for image processing usually
-                  // But SCStreamConfiguration expects coordinates in display space?
-                  // Let's stick to standard CG rects.
-                  // We need to return rect in GLOBAL SCREEN COORDINATES (Bottom-Left origin usually for macOS Window Server).
-                  return screenRect
-             }
-        }
+        // The overlay fills the selected display. Both coordinates use points from its top left.
         return selectionRect
     }
 }

@@ -29,9 +29,15 @@ final class AppState {
             return
         }
 
+        guard let screen = NSScreen.main,
+              let displayID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")]
+                as? CGDirectDisplayID else { return }
+
         let overlay = OverlaySelectionView(
             isPresented: .constant(true),
-            onSelectionComplete: { [weak self] rect in self?.startCapture(rect: rect) })
+            onSelectionComplete: { [weak self] rect in
+                self?.startCapture(displayID: displayID, rect: rect)
+            })
         let window = NSWindow(contentViewController: NSHostingController(rootView: overlay))
         window.styleMask = [.borderless, .fullSizeContentView]
         window.level = .screenSaver
@@ -40,9 +46,7 @@ final class AppState {
         window.hasShadow = false
         window.isReleasedWhenClosed = false
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        if let screen = NSScreen.main {
-            window.setFrame(screen.frame, display: true)
-        }
+        window.setFrame(screen.frame, display: true)
         window.makeKeyAndOrderFront(nil)
         selectionWindow = window
 
@@ -64,7 +68,7 @@ final class AppState {
         }
     }
 
-    private func startCapture(rect: CGRect) {
+    private func startCapture(displayID: CGDirectDisplayID, rect: CGRect) {
         cancelSelection()
         Task {
             guard await captureEngine.checkPermissions() else {
@@ -72,7 +76,9 @@ final class AppState {
                 return
             }
             await captureEngine.refreshContent()
-            guard let display = captureEngine.availableDisplays.first else { return }
+            guard let display = captureEngine.availableDisplays.first(where: {
+                $0.displayID == displayID
+            }) else { return }
             await captureEngine.startCapture(display: display, rect: rect)
             if captureEngine.isCapturing {
                 showScopes()
