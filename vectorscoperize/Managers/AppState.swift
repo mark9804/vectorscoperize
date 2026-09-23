@@ -3,23 +3,30 @@ import SwiftUI
 
 @MainActor
 final class AppState {
-    let captureEngine = CaptureEngine()
+    let captureEngine: CaptureEngine
     let renderer = ScopeRenderer()
     private(set) var scopeWindowController: ScopeWindowController?
     private var selectionWindow: NSWindow?
     private var selectionEventMonitor: Any?
+    private var selectedRegion: (displayID: CGDirectDisplayID, rect: CGRect)?
+    private var captureTask: Task<Void, Never>?
 
     var isScopeVisible: Bool { scopeWindowController?.window?.isVisible == true }
 
-    init() {
+    convenience init() {
+        self.init(captureEngine: CaptureEngine())
+    }
+
+    init(captureEngine: CaptureEngine) {
+        self.captureEngine = captureEngine
         renderer.setInput(publisher: captureEngine.frameSubject)
     }
 
     func reopen() {
-        if captureEngine.isCapturing {
-            showScopes()
+        if isScopeVisible {
+            scopeWindowController?.showWindow(nil)
         } else {
-            startSelection()
+            showScopes()
         }
     }
 
@@ -36,7 +43,7 @@ final class AppState {
         let overlay = OverlaySelectionView(
             isPresented: .constant(true),
             onSelectionComplete: { [weak self] rect in
-                self?.startCapture(displayID: displayID, rect: rect)
+                self?.selectRegion(displayID: displayID, rect: rect)
             })
         let window = NSWindow(contentViewController: NSHostingController(rootView: overlay))
         window.styleMask = [.borderless, .fullSizeContentView]
@@ -68,20 +75,31 @@ final class AppState {
         }
     }
 
-    private func startCapture(displayID: CGDirectDisplayID, rect: CGRect) {
+    func selectRegion(displayID: CGDirectDisplayID, rect: CGRect) {
         cancelSelection()
-        Task {
-            guard await captureEngine.checkPermissions() else {
+        selectedRegion = (displayID, rect)
+        showScopes()
+    }
+
+    private func updateCapture() {
+        // Finish an in-flight start/stop before applying the latest window state.
+        let previousTask = captureTask
+        previousTask?.cancel()
+        captureTask = Task {
+            await previousTask?.value
+            guard !Task.isCancelled else { return }
+            await captureEngine.stopCapture()
+            guard !Task.isCancelled, isScopeVisible, let region = selectedRegion else { return }
+            let permitted = await captureEngine.checkPermissions()
+            guard !Task.isCancelled, isScopeVisible else { return }
+            guard permitted else {
+                hideScopes()
                 showScreenRecordingPermissionAlert()
                 return
             }
-            await captureEngine.refreshContent()
-            guard let display = captureEngine.availableDisplays.first(where: {
-                $0.displayID == displayID
-            }) else { return }
-            await captureEngine.startCapture(display: display, rect: rect)
-            if captureEngine.isCapturing {
-                showScopes()
+            await captureEngine.startCapture(displayID: region.displayID, rect: region.rect)
+            if Task.isCancelled || !isScopeVisible {
+                await captureEngine.stopCapture()
             }
         }
     }
@@ -116,12 +134,19 @@ final class AppState {
     }
 
     func showScopes() {
+        guard selectedRegion != nil else {
+            startSelection()
+            return
+        }
+        cancelSelection()
         if scopeWindowController == nil {
             let controller = ScopeWindowController(renderer: renderer)
             controller.onReselect = { [weak self] in self?.startSelection() }
+            controller.onClose = { [weak self] in self?.updateCapture() }
             scopeWindowController = controller
         }
         scopeWindowController?.showWindow(nil)
+        updateCapture()
     }
 
     func hideScopes() {

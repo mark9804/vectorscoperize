@@ -2,6 +2,26 @@ import Metal
 import AppKit
 import CoreMedia
 
+@MainActor
+final class CheckCaptureEngine: CaptureEngine {
+    var regions: [(displayID: CGDirectDisplayID, rect: CGRect)] = []
+    var pauseNextStart = false
+    var pendingStart: CheckedContinuation<Void, Never>?
+
+    override func checkPermissions() async -> Bool { true }
+
+    override func startCapture(displayID: CGDirectDisplayID, rect: CGRect) async {
+        if pauseNextStart {
+            pauseNextStart = false
+            await withCheckedContinuation { pendingStart = $0 }
+        }
+        regions.append((displayID, rect))
+        isCapturing = true
+    }
+
+    override func stopCapture() async { isCapturing = false }
+}
+
 @main
 enum ScopeRegressionCheck {
     @MainActor
@@ -23,7 +43,8 @@ enum ScopeRegressionCheck {
         }
 
         _ = NSApplication.shared
-        let state = AppState()
+        let capture = CheckCaptureEngine()
+        let state = AppState(captureEngine: capture)
         let renderer = state.renderer
         let device = (renderer.device)!
         let queue = (renderer.commandQueue)!
@@ -81,17 +102,69 @@ enum ScopeRegressionCheck {
             assert(abs(hit / size - y) <= 1)
         }
 
-        // Closing and showing must reuse a live window; reopening must not need a relaunch.
-        state.showScopes()
+        func waitUntil(_ message: String, _ condition: () -> Bool) {
+            let deadline = Date(timeIntervalSinceNow: 2)
+            while !condition() && Date() < deadline {
+                RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.01))
+            }
+            assert(condition(), message)
+        }
+        func selectionIsVisible() -> Bool {
+            NSApp.windows.contains { $0.isVisible && $0.level == .screenSaver }
+        }
+
+        // A fresh launch selects a region; a stopped capture keeps the chosen region.
+        state.reopen()
+        assert(selectionIsVisible() && !state.isScopeVisible)
+        assert(!capture.isCapturing && capture.regions.isEmpty)
+        state.cancelSelection()
+        let region = CGRect(x: 40, y: 80, width: 120, height: 90)
+        state.selectRegion(displayID: 17, rect: region)
         defer { state.hideScopes() }
+        waitUntil("Selecting a region did not start capture") { capture.isCapturing }
         let window = (state.scopeWindowController?.window)!
-        state.hideScopes()
+        window.performClose(nil)
         assert(!state.isScopeVisible)
-        state.captureEngine.isCapturing = true
+        waitUntil("Close button left screen capture running") { !capture.isCapturing }
         state.reopen()
         assert(state.scopeWindowController?.window === window)
-        assert(state.isScopeVisible)
-        state.captureEngine.isCapturing = false
+        assert(state.isScopeVisible && !selectionIsVisible())
+        waitUntil("Reopening did not resume capture") { capture.isCapturing }
+        assert(capture.regions.last!.displayID == 17 && capture.regions.last!.rect == region)
+
+        state.toggleScopes()
+        waitUntil("Menu hide left screen capture running") { !capture.isCapturing }
+        state.toggleScopes()
+        waitUntil("Menu show did not resume capture") { capture.isCapturing }
+        assert(!selectionIsVisible() && capture.regions.last!.rect == region)
+
+        // Closing during an asynchronous start must still stop that capture when it returns.
+        state.hideScopes()
+        waitUntil("Capture did not stop") { !capture.isCapturing }
+        capture.pauseNextStart = true
+        let startsBeforeClose = capture.regions.count
+        state.reopen()
+        waitUntil("Delayed capture did not start") { capture.pendingStart != nil }
+        state.hideScopes()
+        capture.pendingStart!.resume()
+        capture.pendingStart = nil
+        waitUntil("A late start left the hidden window capturing") {
+            capture.regions.count > startsBeforeClose && !capture.isCapturing
+        }
+        assert(!state.isScopeVisible)
+
+        let newRegionRect = CGRect(x: 400, y: 100, width: 80, height: 60)
+        state.selectRegion(displayID: 23, rect: newRegionRect)
+        waitUntil("Reselection did not start capture") { capture.isCapturing }
+        let startsBeforeReopen = capture.regions.count
+        state.hideScopes()
+        state.reopen()
+        waitUntil("Reopening lost the newly selected region") {
+            capture.isCapturing && capture.regions.count > startsBeforeReopen
+                && capture.regions.last!.displayID == 23
+                && capture.regions.last!.rect == newRegionRect
+        }
+        assert(!selectionIsVisible())
 
         // A denied permission must offer a way back to selection without changing system permissions.
         for response in [NSApplication.ModalResponse.alertSecondButtonReturn, .alertThirdButtonReturn] {
@@ -173,7 +246,7 @@ enum ScopeRegressionCheck {
         renderer.displayMode = .vectorScope
         assert(outputValue() < 10, "Static frame did not redraw as vectorscope")
 
-        // A new region can deliver its only complete frame before the scopes reopen.
+        // Cached frames must redraw after reopening, and later frames must keep updating.
         renderer.displayMode = .rgbParade
         state.hideScopes()
         let newRegion = makeFrame(red: 32, green: 64, blue: 192)
@@ -190,6 +263,6 @@ enum ScopeRegressionCheck {
         RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.05))
         let updatedY = Int((1 - Float(128) / 255) * Float(renderer.outputTexture!.height / 3 - 1))
         assert(outputValue(y: updatedY, channel: 2) > 100, "Reopened scopes stopped updating")
-        print("PASS: color bars, window reopening, permission recovery, idle frames, mode switching, and region refresh")
+        print("PASS: color bars, capture visibility and region retention, permission recovery, idle frames, mode switching, and region refresh")
     }
 }

@@ -16,8 +16,6 @@ class CaptureEngine: NSObject, SCStreamOutput, SCStreamDelegate, ObservableObjec
     let frameSubject = PassthroughSubject<CMSampleBuffer, Never>()
     
     private var stream: SCStream?
-    private var displayID: CGDirectDisplayID?
-    private var selectionRect: CGRect = .zero // capture rect
     
     override init() {
         super.init()
@@ -43,11 +41,11 @@ class CaptureEngine: NSObject, SCStreamOutput, SCStreamDelegate, ObservableObjec
         }
     }
     
-    func startCapture(display: SCDisplay, rect: CGRect) async {
-        // Stop existing
-        if let stream = stream {
-            try? await stream.stopCapture()
-        }
+    func startCapture(displayID: CGDirectDisplayID, rect: CGRect) async {
+        await stopCapture()
+        await refreshContent()
+        guard !Task.isCancelled,
+              let display = availableDisplays.first(where: { $0.displayID == displayID }) else { return }
         
         let filter = SCContentFilter(display: display, excludingApplications: [], exceptingWindows: [])
         // We probably want to crop to the rect. 
@@ -79,10 +77,12 @@ class CaptureEngine: NSObject, SCStreamOutput, SCStreamDelegate, ObservableObjec
     }
     
     func stopCapture() async {
+        guard let stream else { return }
+        self.stream = nil
+        isCapturing = false
         do {
-            try await stream?.stopCapture()
-            self.isCapturing = false
-            stream = nil
+            try await stream.stopCapture()
+            logger.info("Capture stopped")
         } catch {
             logger.error("Failed to stop capture: \(error.localizedDescription)")
         }
@@ -109,15 +109,18 @@ class CaptureEngine: NSObject, SCStreamOutput, SCStreamDelegate, ObservableObjec
     nonisolated func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
         guard type == .screen else { return }
         Task { @MainActor in
-            // print("CaptureEngine: frame received") // Comment out to avoid spam, but useful for initial debug
+            // Initial frames can arrive before startCapture returns.
+            guard self.stream === stream else { return }
             self.frameSubject.send(sampleBuffer)
         }
     }
     
     nonisolated func stream(_ stream: SCStream, didStopWithError error: Error) {
         Task { @MainActor in
+            guard self.stream === stream else { return }
             self.logger.error("Stream stopped with error: \(error.localizedDescription)")
             self.isCapturing = false
+            self.stream = nil
         }
     }
 }

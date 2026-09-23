@@ -7,18 +7,23 @@ private final class ScopeMetalView: MTKView {
     override var needsPanelToBecomeKey: Bool { true }
 }
 
-class ScopeWindowController: NSWindowController {
+class ScopeWindowController: NSWindowController, NSWindowDelegate {
 
     private var overlayView: GraticuleOverlayView?
     private var renderer: ScopeRenderer?
     private var cancellables = Set<AnyCancellable>()
 
     var onReselect: (() -> Void)?
+    var onClose: (() -> Void)?
     private var eventMonitor: Any?
 
     override func showWindow(_ sender: Any?) {
         super.showWindow(sender)
         renderer?.mtkView?.draw()
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        onClose?()
     }
 
     deinit {
@@ -39,6 +44,8 @@ class ScopeWindowController: NSWindowController {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.title = "Vectorscoperize"
         panel.isFloatingPanel = true
+        // Keep scopes visible while the user edits a photo in another application.
+        panel.hidesOnDeactivate = false
         panel.isMovableByWindowBackground = true
         panel.isReleasedWhenClosed = false
 
@@ -83,6 +90,7 @@ class ScopeWindowController: NSWindowController {
         panel.contentView = container
 
         self.init(window: panel)
+        panel.delegate = self
         self.renderer = renderer
         self.overlayView = overlay
 
